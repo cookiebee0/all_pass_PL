@@ -33,9 +33,12 @@ class Interpreter:
         self.functions = {}
 
     def eval(self, node):
-        if isinstance(node, Number): return node.value
-        if isinstance(node, String): return node.value
-        if isinstance(node, Variable): return self.env.get(node.name)
+        if isinstance(node, Number):
+            return node.value
+        if isinstance(node, String):
+            return node.value
+        if isinstance(node, Variable):
+            return self.env.get(node.name)
         if isinstance(node, Binary):
             left, right = self.eval(node.left), self.eval(node.right)
             if node.op == "+": return left + right
@@ -46,23 +49,27 @@ class Interpreter:
             if node.op == "<": return left < right
             if node.op == "==": return left == right
             if node.op == "!=": return left != right
+            if node.op == "<=": return left <= right
+            if node.op == ">=": return left >= right
             raise RuntimeError(f"Unknown operator {node.op}")
         if isinstance(node, Call):
-            func = self.functions.get(node.callee.name)
-            if not func:
-                raise NameError(f"Undefined function '{node.callee.name}'")
+            func = self.eval(node.callee)  # 注意這裡不是只找函數名稱，支援函式值
             args = [self.eval(arg) for arg in node.args]
-            return func(*args)
+            if not callable(func):
+                raise RuntimeError("Calling non-function")
+            return func(self, args)   # 呼叫函式，傳入Interpreter實例與引數列表
 
     def exec(self, stmt):
         if isinstance(stmt, Assign):
             value = self.eval(stmt.value)
-            self.env.define(stmt.name, value)
+            try:
+                self.env.set(stmt.name, value)
+            except NameError:
+                self.env.define(stmt.name, value)
         elif isinstance(stmt, Print):
             print(self.eval(stmt.expr))
         elif isinstance(stmt, Block):
-            for s in stmt.statements:
-                self.exec(s)
+            self.execute_block(stmt.statements, Environment(self.env))
         elif isinstance(stmt, If):
             if self.eval(stmt.condition):
                 self.exec(stmt.then_branch)
@@ -72,20 +79,32 @@ class Interpreter:
             while self.eval(stmt.condition):
                 self.exec(stmt.body)
         elif isinstance(stmt, Function):
-            def func(*args):
-                local = Environment(self.env)  # 支援巢狀作用域
+            def func(interpreter, args):
+                local_env = Environment(self.env)  # 支援閉包，保存定義時環境
                 for name, val in zip(stmt.params, args):
-                    local.define(name, val)
-                old_env = self.env
-                self.env = local
+                    local_env.define(name, val)
+                # 呼叫時暫時切換環境
+                old_env = interpreter.env
+                interpreter.env = local_env
                 try:
-                    for s in stmt.body.statements:
-                        self.exec(s)
+                    interpreter.execute_block(stmt.body.statements, local_env)
                 except ReturnException as r:
-                    self.env = old_env
+                    interpreter.env = old_env
                     return r.value
-                self.env = old_env
-            self.functions[stmt.name] = func
+                interpreter.env = old_env
+            self.env.define(stmt.name, func)
         elif isinstance(stmt, Return):
             value = self.eval(stmt.value)
             raise ReturnException(value)
+        else:
+            # 假設是表達式語句
+            self.eval(stmt)
+
+    def execute_block(self, statements, env):
+        old_env = self.env
+        self.env = env
+        try:
+            for stmt in statements:
+                self.exec(stmt)
+        finally:
+            self.env = old_env

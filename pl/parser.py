@@ -25,10 +25,11 @@ class Parser:
             return self.function_stmt()
         if self.match("KEYWORD", "return"):
             return self.return_stmt()
+        if self.check("LBRACE"):
+            return self.block()
         return self.expr_stmt()
 
     def let_stmt(self):
-        # 'let' 已被 match 消耗掉
         name = self.consume("IDENT")[1]
         self.consume("OP", "=")
         value = self.expression()
@@ -41,7 +42,6 @@ class Parser:
         return Print(expr)
 
     def while_stmt(self):
-        # 這裡要求條件用括號包起來 (expression)
         self.consume("LPAREN")
         condition = self.expression()
         self.consume("RPAREN")
@@ -52,10 +52,10 @@ class Parser:
         self.consume("LPAREN")
         condition = self.expression()
         self.consume("RPAREN")
-        then_branch = self.block()          # 這裡用 block()，因為是 { ... }
+        then_branch = self.block()
         else_branch = None
         if self.match("KEYWORD", "else"):
-            else_branch = self.block()     # else 也用 block()
+            else_branch = self.block()
         return If(condition, then_branch, else_branch)
 
     def function_stmt(self):
@@ -104,15 +104,15 @@ class Parser:
 
     def equality(self):
         expr = self.comparison()
-        while self.match("OP", "=="):
-            op = "=="
+        while self.match("OP", "==") or self.match("OP", "!="):
+            op = self.tokens[self.pos - 1][1]
             right = self.comparison()
             expr = Binary(expr, op, right)
         return expr
 
     def comparison(self):
         expr = self.term()
-        while self.match("OP", ">") or self.match("OP", "<"):
+        while self.match("OP", ">") or self.match("OP", "<") or self.match("OP", ">=") or self.match("OP", "<="):
             op = self.tokens[self.pos - 1][1]
             right = self.term()
             expr = Binary(expr, op, right)
